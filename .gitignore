@@ -1,0 +1,23 @@
+# secrets and local environment
+.env
+.env.*
+!.env.example
+
+# local vacancy dumps
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
