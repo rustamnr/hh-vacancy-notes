@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -12,6 +13,7 @@ from typing import Any, Callable, Optional, TextIO
 
 from hh_parser import client as hh
 from hh_parser.config import ConfigError, HHConfig, load_dotenv
+from hh_parser.filters import parse_words, title_excluder
 from hh_parser.vault import Vault
 from hh_parser.view import salary_text, vacancy_view
 
@@ -39,6 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--period", type=int, default=0, help="only vacancies published within this many days (0 = no limit)")
     s.add_argument("--per-page", type=int, default=20, help="results per page, 1..100")
     s.add_argument("--pages", type=int, default=1, help="how many pages to fetch")
+    s.add_argument(
+        "--exclude",
+        default=None,
+        metavar="WORDS",
+        help=(
+            "comma-separated words; vacancies whose title contains one are skipped, "
+            'e.g. "junior,стажер,руководитель". Default: HH_EXCLUDE from the environment/.env; '
+            '--exclude "" turns the filter off'
+        ),
+    )
     s.add_argument("--json", action="store_true", help="fetch every found vacancy and print a JSON array instead of the table")
     s.add_argument("--out", default="", metavar="DIR", help="write one JSON file per vacancy to DIR")
     s.add_argument("--raw", action="store_true", help="with --out: write the raw API response instead of the separated fields")
@@ -166,19 +178,37 @@ def fetch_details(
 
 
 def make_client() -> hh.HHClient:
-    load_dotenv(".env")
     cfg = HHConfig.from_env()
     return hh.HHClient(cfg.user_agent, cfg.app_token)
 
 
+def apply_exclude(
+    items: list[dict[str, Any]], value: Optional[str], err: TextIO
+) -> list[dict[str, Any]]:
+    """Drop vacancies whose title contains an excluded word. This runs on the
+    search results, before any vacancy is fetched in full, so excluded ones cost
+    no extra requests."""
+    if value is None:
+        value = os.environ.get("HH_EXCLUDE", "")
+    words = parse_words(value)
+    if not words:
+        return items
+    is_excluded = title_excluder(words)
+    kept = [it for it in items if not is_excluded(it.get("name", ""))]
+    print(f"excluded {len(items) - len(kept)} by title ({', '.join(words)})", file=err)
+    return kept
+
+
 def cmd_search(args: argparse.Namespace, out: TextIO, err: TextIO, client: Optional[hh.HHClient] = None) -> int:
     hh.validate_paging(args.per_page, args.pages)
+    load_dotenv(".env")
     client = client or make_client()
 
     found, items = hh.search_all(
         client, text=args.text, area=args.area, period=args.period, per_page=args.per_page, pages=args.pages
     )
     print(f"found {found} vacancies in total for {args.text!r}, got {len(items)}", file=err)
+    items = apply_exclude(items, args.exclude, err)
 
     if not (args.json or args.out or args.vault):
         print_table(items, out)
@@ -217,6 +247,7 @@ def cmd_search(args: argparse.Namespace, out: TextIO, err: TextIO, client: Optio
 
 def cmd_vacancy(args: argparse.Namespace, out: TextIO, err: TextIO, client: Optional[hh.HHClient] = None) -> int:
     vacancy_id = parse_id(args.vacancy)
+    load_dotenv(".env")
     client = client or make_client()
     body = client.vacancy_raw(vacancy_id)
     value = json.loads(body) if args.raw else vacancy_view(json.loads(body))

@@ -29,12 +29,22 @@ python3 -m hh_parser search --text golang --period 3 --per-page 10 --json > vaca
 python3 -m hh_parser search --text golang --period 7 --per-page 50 --out data/vacancies
 
 # write notes into an Obsidian folder: no duplicates, known vacancies are not fetched again
-python3 -m hh_parser search --text golang --period 7 --per-page 50 --vault "~/Documents/Obsidian Vault/HH-Vacancies"
+python3 -m hh_parser search --text golang --period 7 --per-page 50 --vault "/path/to/your/vault/Vacancies"
 
 # one vacancy by id or URL: separated fields, or the raw API response
 python3 -m hh_parser vacancy https://hh.ru/vacancy/123456789
 python3 -m hh_parser vacancy --raw 123456789
 ```
+
+### Excluding vacancies
+
+`--exclude "junior,джун,стажер,руководитель"` skips vacancies whose **title** contains one of the words (case and ё/е do not matter; a word matches at the start of a word of the title, so `джун` covers "Джуниор", and a phrase like `team lead` works too). It filters the search results before anything is fetched in full, so excluded vacancies cost no extra requests, and they never reach the notes. Put your usual list into `.env` once and every command uses it:
+
+```
+HH_EXCLUDE=junior,джун,стажер,стажёр,intern,trainee,руководитель,начальник,team lead,тимлид,head of,director,директор
+```
+
+`--exclude ""` switches the filter off for one run. Only the title is checked, on purpose: a description that merely says "you will mentor juniors" must not hide a good vacancy.
 
 Fields of the JSON view: `id`, `title`, `url`, `published_at`, `archived`, `employer`, `area`, `salary {from, to, currency, gross}`, `experience`, `employment`, `schedule`, `professional_roles[]`, `key_skills[]`, `response_letter_required`, `has_test`, `responsibilities`, `requirements`, `nice_to_have`, `conditions`, `description_text`.
 
@@ -62,6 +72,7 @@ hh_parser/
   client.py     hh.ru API client, typed errors, paging helpers
   config.py     settings from the environment and .env
   view.py       a vacancy flattened into separate fields
+  filters.py    exclusion of vacancies by words in the title
   textutil.py   HTML to plain text, splitting a description into sections
   vault.py      Markdown notes for Obsidian (no duplicates, never overwrites)
 tests/          unittest, with a fake hh API on localhost

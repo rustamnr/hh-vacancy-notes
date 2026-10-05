@@ -10,14 +10,20 @@ AREA     ?=
 # Folder for Obsidian notes, e.g. VAULT="$(HOME)/Documents/MyVault/Vacancies".
 # Set it here or per call: make collect VAULT=...
 VAULT    ?= $(HOME)/Documents/Obsidian Vault/HH-Vacancies
+# Quotes inside the value (VAULT ?= "/path with spaces") would break the commands below.
+override VAULT := $(subst ",,$(VAULT))
 OUT      ?= data/vacancies
+# Vacancies whose title contains one of these words are skipped (case and ё/е do not matter).
+# Make it empty to fall back to HH_EXCLUDE from .env, or pass it per call: make collect EXCLUDE=junior
+EXCLUDE  ?= junior,джун,стажер,стажёр,intern,trainee,руководитель,начальник,team lead,тимлид,head of,director,директор,Tech Lead
+override EXCLUDE := $(subst ",,$(EXCLUDE))
 
-SEARCH = $(PY) -m hh_parser search --text "$(TEXT)" --period $(PERIOD) --per-page $(PER_PAGE) --pages $(PAGES) $(if $(AREA),--area $(AREA))
+SEARCH = $(PY) -m hh_parser search --text "$(TEXT)" --period $(PERIOD) --per-page $(PER_PAGE) --pages $(PAGES) $(if $(AREA),--area $(AREA)) $(if $(EXCLUDE),--exclude "$(EXCLUDE)")
 
 help: ## List commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Variables: TEXT PERIOD PER_PAGE PAGES AREA VAULT OUT, e.g. make collect TEXT=python PERIOD=3"
+	@echo "Variables: TEXT PERIOD PER_PAGE PAGES AREA EXCLUDE VAULT OUT, e.g. make collect TEXT=python PERIOD=3"
 
 test: ## Run the tests
 	$(PY) -m unittest

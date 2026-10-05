@@ -33,7 +33,7 @@ def api_handler(path, headers):
 
 def run_search(api, **overrides):
     args = argparse.Namespace(text="go", area="", period=0, per_page=10, pages=1,
-                              json=False, out="", raw=False, vault="")
+                              json=False, out="", raw=False, vault="", exclude="")
     for k, v in overrides.items():
         setattr(args, k, v)
     out, err = io.StringIO(), io.StringIO()
@@ -105,6 +105,34 @@ class CliTest(unittest.TestCase):
             detail_paths = [p for p, _ in api.requests[first_requests:] if p.startswith("/vacancies/")]
             self.assertEqual(detail_paths, ["/vacancies/2"])
             self.assertEqual(len(list(Path(d).glob("*.md"))), 1)
+
+    def test_exclude_skips_vacancies_by_title_before_fetching_them(self):
+        def handler(path, headers):
+            if path.startswith("/vacancies?"):
+                titles = ["Go developer", "Junior Go developer", "Руководитель отдела Go", "Senior Go Backend"]
+                return 200, {"found": 4, "pages": 1,
+                             "items": [{"id": str(i + 1), "name": t} for i, t in enumerate(titles)]}
+            vid = path.rsplit("/", 1)[1]
+            return 200, {"id": vid, "name": "x"}
+
+        with FakeAPI(handler) as api:
+            _, out, err = run_search(api, json=True, exclude="junior, руководитель")
+        self.assertEqual([v["id"] for v in json.loads(out)], ["1", "4"])
+        self.assertIn("excluded 2 by title", err)
+        fetched = [p for p, _ in api.requests if p.startswith("/vacancies/")]
+        self.assertEqual(sorted(fetched), ["/vacancies/1", "/vacancies/4"])  # excluded ones cost no request
+
+    def test_exclude_defaults_to_the_environment_and_can_be_switched_off(self):
+        def handler(path, headers):
+            return 200, {"found": 2, "pages": 1, "items": [{"id": "1", "name": "Junior dev"}, {"id": "2", "name": "Dev"}]}
+
+        with FakeAPI(handler) as api:
+            with mock.patch.dict("os.environ", {"HH_EXCLUDE": "junior"}):
+                _, out, _ = run_search(api, exclude=None)
+                self.assertNotIn("Junior dev", out)
+                self.assertIn("Dev", out)
+                _, out, _ = run_search(api, exclude="")  # an explicit empty value turns the filter off
+                self.assertIn("Junior dev", out)
 
     def test_fetch_details_sink_error_stops_the_run(self):
         def boom(*_a):
